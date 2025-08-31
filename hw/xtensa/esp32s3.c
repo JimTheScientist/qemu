@@ -64,6 +64,8 @@
 #include "hw/misc/esp32s3_pms.h"
 #include "hw/net/can/esp32s3_twai.h"
 
+#include "hw/ssi/st7789.h"  // custom lcd
+
 #include "cpu_esp32s3.h"
 
 #include "hw/misc/esp32c3_jtag.h"
@@ -844,6 +846,18 @@ static void esp32s3_machine_init(MachineState *machine)
         memory_region_add_subregion_overlap(sys_mem, DR_REG_FRAMEBUF_BASE, mr, 0);
         memory_region_add_subregion_overlap(sys_mem, esp32s3_memmap[ESP32S3_MEMREGION_FRAMEBUF].base, &ss->rgb.vram, 0);
     }
+
+{
+    DeviceState *spi_dev = DEVICE(&ss->spi1);
+    DeviceState *st7789 = qdev_new("st7789");
+
+    // Set the CS index to a free one (e.g., 1)
+    qdev_prop_set_uint32(st7789, "cs", 10);
+
+    qdev_realize(st7789, qdev_get_child_bus(spi_dev, "spi"), &error_fatal);
+}
+
+
 
     esp32s3_soc_add_unimp_device(sys_mem, "esp32s3.rmt", DR_REG_RMT_BASE, 0x1000);
     esp32s3_soc_add_unimp_device(sys_mem, "esp32s3.iomux", DR_REG_IO_MUX_BASE, 0x2000);
