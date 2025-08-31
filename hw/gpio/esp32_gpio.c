@@ -35,11 +35,83 @@ static uint64_t esp32_gpio_read(void *opaque, hwaddr addr, unsigned int size)
     }
     return r;
 }
+#define GPIO_OUT_REG       0x00
+#define GPIO_DIR_REG       0x04
+#define GPIO_IN_REG        0x08
+#define GPIO_SET_REG       0x0C
+#define GPIO_CLEAR_REG     0x10
+#define GPIO_ENABLE_REG        0x20
+#define GPIO_OUT1_REG          0x30
+#define GPIO_OUT1_W1TS_REG     0x58
+#define GPIO_OUT1_W1TC_REG     0x5C
+
+
+#define GPIO_OUT_W1TS_REG   0x14
+#define GPIO_OUT_W1TC_REG   0x18
 
 static void esp32_gpio_write(void *opaque, hwaddr addr,
-                       uint64_t value, unsigned int size)
+                             uint64_t value, unsigned int size)
 {
+    Esp32GpioState *s = ESP32_GPIO(opaque);
+
+    switch (addr) {
+        case GPIO_OUT_W1TS_REG: {
+            uint64_t prev = s->gpio_out;
+            s->gpio_out |= value;
+
+            uint64_t changed = prev ^ s->gpio_out;
+            if (changed & (1ULL << 33)) {
+                qemu_log("GPIO33 set to 1 via W1TS\n");
+            }
+            break;
+        }
+
+        case GPIO_OUT_W1TC_REG: {
+            uint64_t prev = s->gpio_out;
+            s->gpio_out &= ~value;
+
+            uint64_t changed = prev ^ s->gpio_out;
+            if (changed & (1ULL << 33)) {
+                qemu_log("GPIO33 cleared to 0 via W1TC\n");
+            }
+            break;
+        }
+        case GPIO_ENABLE_REG:
+            s->gpio_enable = value;
+            break;
+
+        case GPIO_OUT1_REG:
+            s->gpio_out1 = value;
+            break;
+        case GPIO_OUT1_W1TS_REG: {
+            uint64_t prev = s->gpio_out1;
+            s->gpio_out1 |= value;
+            qemu_log("OUT1_W1TS_REG write: val=0x%" PRIx64 ", prev=0x%" PRIx64 ", new=0x%" PRIx64 "\n", value, prev, s->gpio_out1);
+            if (value & (1ULL << 1)) {
+                qemu_log("GPIO33 SET (via OUT1_W1TS_REG)\n");
+            }
+            break;
+        }
+
+        case GPIO_OUT1_W1TC_REG: {
+            uint64_t prev = s->gpio_out1;
+            s->gpio_out1 &= ~value;
+            qemu_log("OUT1_W1TC_REG write: val=0x%" PRIx64 ", prev=0x%" PRIx64 ", new=0x%" PRIx64 "\n", value, prev, s->gpio_out1);
+            if (value & (1ULL << 1)) {
+                qemu_log("GPIO33 CLEAR (via OUT1_W1TC_REG)\n");
+            }
+            break;
+        }
+
+
+
+        default:
+            qemu_log("GPIO write to unhandled addr: 0x%"HWADDR_PRIx", value: 0x%"PRIx64"\n", addr, value);
+            break;
+    }
 }
+
+
 
 static const MemoryRegionOps uart_ops = {
     .read =  esp32_gpio_read,

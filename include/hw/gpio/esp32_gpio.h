@@ -20,7 +20,13 @@ typedef struct Esp32GpioState {
     MemoryRegion iomem;
     qemu_irq irq;
     uint32_t strap_mode;
+
+    uint64_t gpio_out;      // GPIO 0–31
+    uint64_t gpio_out1;     // GPIO 32–39 (high bits)
+    uint64_t gpio_enable;   // Output enable
 } Esp32GpioState;
+
+
 
 typedef struct Esp32GpioClass {
     SysBusDeviceClass parent_class;
