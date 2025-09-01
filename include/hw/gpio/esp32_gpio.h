@@ -3,6 +3,7 @@
 #include "hw/sysbus.h"
 #include "hw/hw.h"
 #include "hw/registerfields.h"
+#include "hw/ssi/ssi.h"
 
 #define TYPE_ESP32_GPIO "esp32.gpio"
 #define ESP32_GPIO(obj)             OBJECT_CHECK(Esp32GpioState, (obj), TYPE_ESP32_GPIO)
@@ -24,6 +25,7 @@ typedef struct Esp32GpioState {
     uint64_t gpio_out;      // GPIO 0–31
     uint64_t gpio_out1;     // GPIO 32–39 (high bits)
     uint64_t gpio_enable;   // Output enable
+    SSIPeripheral *st7789_ssi; // << add this
 } Esp32GpioState;
 
 

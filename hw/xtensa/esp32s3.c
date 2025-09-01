@@ -134,6 +134,8 @@ typedef struct Esp32s3SocState {
 
     MemoryRegion cpu_specific_mem[ESP32S3_CPU_COUNT];
     ESP32S3SpiState spi1;
+    ESP32S3SpiState spi2;
+    ESP32S3SpiState spi3;
     ESP32S3CacheState cache;
     ESP32S3EfuseState efuse;
     ESP32S3ClockState clock;
@@ -848,13 +850,29 @@ static void esp32s3_machine_init(MachineState *machine)
     }
 
 {
-    DeviceState *spi_dev = DEVICE(&ss->spi1);
-    DeviceState *st7789 = qdev_new("st7789");
+object_initialize_child(OBJECT(ss), "spi2", &ss->spi2, TYPE_ESP32S3_SPI);
+sysbus_realize(SYS_BUS_DEVICE(&ss->spi2), &error_fatal);
+MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->spi2), 0);
+memory_region_add_subregion_overlap(sys_mem, DR_REG_SPI2_BASE, mr, 0);
+}
+{
+// Instantiate SPI3 controller
+object_initialize_child(OBJECT(ss), "spi3", &ss->spi3, TYPE_ESP32S3_SPI);
 
-    // Set the CS index to a free one (e.g., 1)
-    qdev_prop_set_uint32(st7789, "cs", 10);
+// Realize it
+sysbus_realize(SYS_BUS_DEVICE(&ss->spi3), &error_fatal);
 
-    qdev_realize(st7789, qdev_get_child_bus(spi_dev, "spi"), &error_fatal);
+// Map its MMIO region
+MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->spi3), 0);
+memory_region_add_subregion_overlap(sys_mem, DR_REG_SPI3_BASE, mr, 0);
+}
+{
+// Now attach the ST7789 device to spi2's bus:
+DeviceState *spi3_dev = DEVICE(&ss->spi3);
+DeviceState *st7789_dev = qdev_new("st7789");
+qdev_prop_set_uint32(st7789_dev, "cs", 0);
+qdev_realize(st7789_dev, qdev_get_child_bus(spi3_dev, "spi"), &error_fatal);
+
 }
 
 

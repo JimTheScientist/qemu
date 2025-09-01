@@ -18,7 +18,7 @@
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "hw/gpio/esp32_gpio.h"
-
+#include "hw/ssi/st7789.h"
 
 
 static uint64_t esp32_gpio_read(void *opaque, hwaddr addr, unsigned int size)
@@ -89,6 +89,9 @@ static void esp32_gpio_write(void *opaque, hwaddr addr,
             qemu_log("OUT1_W1TS_REG write: val=0x%" PRIx64 ", prev=0x%" PRIx64 ", new=0x%" PRIx64 "\n", value, prev, s->gpio_out1);
             if (value & (1ULL << 1)) {
                 qemu_log("GPIO33 SET (via OUT1_W1TS_REG)\n");
+                if (s->st7789_ssi) {
+                    st7789_set_cs(s->st7789_ssi, false); // CS inactive (HIGH)
+                }
             }
             break;
         }
@@ -97,8 +100,11 @@ static void esp32_gpio_write(void *opaque, hwaddr addr,
             uint64_t prev = s->gpio_out1;
             s->gpio_out1 &= ~value;
             qemu_log("OUT1_W1TC_REG write: val=0x%" PRIx64 ", prev=0x%" PRIx64 ", new=0x%" PRIx64 "\n", value, prev, s->gpio_out1);
-            if (value & (1ULL << 1)) {
+            if (value & (1ULL << 1)) { // GPIO33 CLEAR
                 qemu_log("GPIO33 CLEAR (via OUT1_W1TC_REG)\n");
+                if (s->st7789_ssi) {
+                    st7789_set_cs(s->st7789_ssi, true); // CS active (LOW)
+                }
             }
             break;
         }

@@ -24,8 +24,25 @@ struct ST7789State {
     uint8_t current_command;
 
     int x, y;
+
+    bool cs_active;  // Add this member
 };
 
+
+int st7789_set_cs(SSIPeripheral *dev, bool cs_active)
+{
+    ST7789State *s = ST7789(dev);
+    s->expecting_command = cs_active; // reset on CS assert
+    s->x = 0;
+    s->y = 0;
+
+    // Store cs_active in state to track it in transfer_raw
+    s->cs_active = cs_active;
+
+    qemu_log("ST7789 CS %s\n", cs_active ? "asserted" : "deasserted");
+
+    return 0;
+}
 
 
 static void st7789_reset(DeviceState *dev)
@@ -34,18 +51,35 @@ static void st7789_reset(DeviceState *dev)
     s->expecting_command = true;
     s->x = s->y = 0;
 }
+//static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
+//{
+//    ST7789State *s = ST7789(dev);
+//
+//    qemu_log("ST7789 got SPI byte: 0x%02x\n", value & 0xFF);
+//
+//    // Keep current toggling or DC logic for later verification
+//    // For now, just log raw bytes
+//
+//    return 0;
+//}
 
-static uint32_t st7789_transfer(SSIPeripheral *dev, uint32_t value)
+static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
 {
     ST7789State *s = ST7789(dev);
 
+    // Only process if CS is active (manually track CS)
+    //if (!s->cs_active) {
+    //    // Ignore data when CS inactive
+    //    return 0;
+    //}
+
     if (s->expecting_command) {
-        s->current_command = value;
+        s->current_command = value & 0xFF;  // cast to 8-bit
         s->expecting_command = false;
-        qemu_log("ST7789 got CMD: 0x%02x\n", value);
+        qemu_log("ST7789 got CMD: 0x%02x\n", s->current_command);
     } else {
-        qemu_log("ST7789 got DATA: 0x%02x for CMD 0x%02x\n", value, s->current_command);
-        // TODO: Handle memory writes
+        qemu_log("ST7789 got DATA: 0x%02x for CMD 0x%02x\n", value & 0xFF, s->current_command);
+        // TODO: Handle memory writes or commands here
         s->expecting_command = true;
     }
 
@@ -108,9 +142,11 @@ static void st7789_class_init(ObjectClass *klass, void *data)
     SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
 
     dc->desc = "ST7789 SPI LCD Display (Virtual)";
-    k->transfer = st7789_transfer;
+    k->transfer_raw = st7789_transfer_raw;  // use transfer_raw now
     k->realize = st7789_realize;
+    k->set_cs = st7789_set_cs;
 }
+
 
 
 
