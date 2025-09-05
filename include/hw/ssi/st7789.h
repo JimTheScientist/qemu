@@ -7,5 +7,6 @@
 OBJECT_DECLARE_SIMPLE_TYPE(ST7789State, ST7789)
 
 int st7789_set_cs(SSIPeripheral *dev, bool cs_active);
+int st7789_set_dc(SSIPeripheral *dev, bool dc_level);
 
 #endif

@@ -24,7 +24,9 @@ typedef struct Esp32GpioState {
 
     uint64_t gpio_out;      // GPIO 0–31
     uint64_t gpio_out1;     // GPIO 32–39 (high bits)
+    uint32_t gpio_out1_prev; // Previous value for edge detection
     uint64_t gpio_enable;   // Output enable
+    uint64_t gpio_enable1;
     SSIPeripheral *st7789_ssi; // << add this
 } Esp32GpioState;
 

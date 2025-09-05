@@ -49,74 +49,205 @@ static uint64_t esp32_gpio_read(void *opaque, hwaddr addr, unsigned int size)
 #define GPIO_OUT_W1TS_REG   0x14
 #define GPIO_OUT_W1TC_REG   0x18
 
-static void esp32_gpio_write(void *opaque, hwaddr addr,
-                             uint64_t value, unsigned int size)
+#define GPIO_REG_NAME(addr) \
+(addr == GPIO_OUT1_W1TS_REG ? "OUT1_W1TS" : \
+addr == GPIO_OUT1_W1TC_REG ? "OUT1_W1TC" : \
+addr == GPIO_OUT1_REG ? "OUT1" : \
+addr == GPIO_OUT_W1TS_REG ? "OUT_W1TS" : \
+addr == GPIO_OUT_W1TC_REG ? "OUT_W1TC" : \
+addr == GPIO_ENABLE_REG ? "ENABLE" : \
+"UNKNOWN")
+
+//static void esp32_gpio_write(void *opaque, hwaddr addr,
+//                             uint64_t value, unsigned int size)
+//{
+//    Esp32GpioState *s = ESP32_GPIO(opaque);
+//    qemu_log("GPIO WRITE: addr=0x%" HWADDR_PRIx " (%s), value=0x%" PRIx64 "\n",
+//             addr, GPIO_REG_NAME(addr), value);
+//
+///**
+//    switch (addr) {
+//        case GPIO_OUT_W1TS_REG: {
+//            uint64_t prev = s->gpio_out;
+//            s->gpio_out |= value;
+//
+//            uint64_t changed = prev ^ s->gpio_out;
+//            if (changed & (1ULL << 33)) {
+//                qemu_log("GPIO33 set to 1 via W1TS\n");
+//            }
+//            break;
+//        }
+//
+//        case GPIO_OUT_W1TC_REG: {
+//            uint64_t prev = s->gpio_out;
+//            s->gpio_out &= ~value;
+//
+//            uint64_t changed = prev ^ s->gpio_out;
+//            if (changed & (1ULL << 33)) {
+//                qemu_log("GPIO33 cleared to 0 via W1TC\n");
+//            }
+//            break;
+//        }
+//        case GPIO_ENABLE_REG:
+//            s->gpio_enable = value;
+//            break;
+//
+//        case GPIO_OUT1_REG:
+//            s->gpio_out1 = value;
+//            break;
+//        case GPIO_OUT1_W1TS_REG: {
+//            uint64_t prev = s->gpio_out1;
+//            s->gpio_out1 |= value;
+//            qemu_log("OUT1_W1TS_REG write: val=0x%" PRIx64 ", prev=0x%" PRIx64 ", new=0x%" PRIx64 "\n", value, prev, s->gpio_out1);
+//            if (value & (1ULL << 1)) {
+//                qemu_log("GPIO33 SET (via OUT1_W1TS_REG)\n");
+//                if (s->st7789_ssi) {
+//                    st7789_set_cs(s->st7789_ssi, false); // CS inactive (HIGH)
+//                }
+//            }
+//            break;
+//        }
+//
+//        case GPIO_OUT1_W1TC_REG: {
+//            uint64_t prev = s->gpio_out1;
+//            s->gpio_out1 &= ~value;
+//            qemu_log("OUT1_W1TC_REG write: val=0x%" PRIx64 ", prev=0x%" PRIx64 ", new=0x%" PRIx64 "\n", value, prev, s->gpio_out1);
+//            if (value & (1ULL << 1)) { // GPIO33 CLEAR
+//                qemu_log("GPIO33 CLEAR (via OUT1_W1TC_REG)\n");
+//                if (s->st7789_ssi) {
+//                    st7789_set_cs(s->st7789_ssi, true); // CS active (LOW)
+//                }
+//            }
+//            break;
+//        }
+//
+//
+//
+//        default:
+//            qemu_log("GPIO write to unhandled addr: 0x%"HWADDR_PRIx", value: 0x%"PRIx64"\n", addr, value);
+//            break;
+//    } **/
+//    switch (addr) {
+//        case 0x24:  // Possibly GPIO_OUT_W1TS_REG (set bits)
+//            s->gpio_out |= value;
+//            qemu_log("GPIO OUT W1TS write: val=0x%" PRIx64 "\n", value);
+//            break;
+//        case 0x28:  // Possibly GPIO_OUT_W1TC_REG (clear bits)
+//            s->gpio_out &= ~value;
+//            qemu_log("GPIO OUT W1TC write: val=0x%" PRIx64 "\n", value);
+//            break;
+//        case 0x4c:  // Possibly GPIO_ENABLE_REG
+//            s->gpio_enable = value;
+//            qemu_log("GPIO ENABLE write: val=0x%" PRIx64 "\n", value);
+//            break;
+//        case 0x8:   // Another GPIO register (possibly GPIO_OUT_REG)
+//            s->gpio_out = value;
+//            qemu_log("GPIO OUT write: val=0x%" PRIx64 "\n", value);
+//            break;
+//        case 0xc:   // Another GPIO register
+//            // ...
+//            break;
+//
+//            // Higher GPIO pins (32+)
+//        case 0x554: // GPIO_OUT1_W1TS_REG ?
+//            s->gpio_out1 |= value;
+//            qemu_log("GPIO OUT1 W1TS write: val=0x%" PRIx64 "\n", value);
+//            break;
+//        case 0x558: // GPIO_OUT1_W1TC_REG ?
+//            s->gpio_out1 &= ~value;
+//            qemu_log("GPIO OUT1 W1TC write: val=0x%" PRIx64 "\n", value);
+//            break;
+//        case 0x55c: // GPIO_ENABLE1_REG ?
+//            s->gpio_enable1 = value;
+//            qemu_log("GPIO ENABLE1 write: val=0x%" PRIx64 "\n", value);
+//            break;
+//
+//            // ... add more as you confirm
+//
+//        default:
+//            qemu_log("GPIO write to unhandled addr: 0x%" HWADDR_PRIx ", value: 0x%" PRIx64 "\n", addr, value);
+//            break;
+//    }
+//
+//}
+
+static void esp32_gpio_write(void *opaque, hwaddr addr, uint64_t value, unsigned int size)
 {
-    Esp32GpioState *s = ESP32_GPIO(opaque);
+    Esp32GpioState *s = opaque;
+
+    uint32_t new_val;
 
     switch (addr) {
-        case GPIO_OUT_W1TS_REG: {
-            uint64_t prev = s->gpio_out;
-            s->gpio_out |= value;
-
-            uint64_t changed = prev ^ s->gpio_out;
-            if (changed & (1ULL << 33)) {
-                qemu_log("GPIO33 set to 1 via W1TS\n");
-            }
-            break;
-        }
-
-        case GPIO_OUT_W1TC_REG: {
-            uint64_t prev = s->gpio_out;
-            s->gpio_out &= ~value;
-
-            uint64_t changed = prev ^ s->gpio_out;
-            if (changed & (1ULL << 33)) {
-                qemu_log("GPIO33 cleared to 0 via W1TC\n");
-            }
-            break;
-        }
-        case GPIO_ENABLE_REG:
-            s->gpio_enable = value;
+        case 0x08: // GPIO_OUT_REG
+            s->gpio_out = (uint32_t)value;
+            //qemu_log("GPIO OUT write: val=0x%08x\n", s->gpio_out);
             break;
 
-        case GPIO_OUT1_REG:
-            s->gpio_out1 = value;
+        case 0x0C: // GPIO_OUT_W1TC_REG
+            s->gpio_out &= ~(uint32_t)value;
+            //qemu_log("GPIO OUT W1TC write: val=0x%08x\n", (uint32_t)value);
             break;
-        case GPIO_OUT1_W1TS_REG: {
-            uint64_t prev = s->gpio_out1;
-            s->gpio_out1 |= value;
-            qemu_log("OUT1_W1TS_REG write: val=0x%" PRIx64 ", prev=0x%" PRIx64 ", new=0x%" PRIx64 "\n", value, prev, s->gpio_out1);
-            if (value & (1ULL << 1)) {
-                qemu_log("GPIO33 SET (via OUT1_W1TS_REG)\n");
+
+        case 0x14: // GPIO_OUT1_W1TS_REG (Set GPIO32–39 HIGH)
+            new_val = s->gpio_out1 | (uint32_t)value;
+            if ((new_val ^ s->gpio_out1) & (1 << 1)) {  // GPIO33 changed
+                bool cs = !(new_val & (1 << 1)); // CS active LOW
                 if (s->st7789_ssi) {
-                    st7789_set_cs(s->st7789_ssi, false); // CS inactive (HIGH)
+                    st7789_set_cs(s->st7789_ssi, cs);
+                    qemu_log("GPIO33 -> ST7789 CS %s\n", cs ? "LOW (ACTIVE)" : "HIGH (INACTIVE)");
                 }
             }
-            break;
-        }
-
-        case GPIO_OUT1_W1TC_REG: {
-            uint64_t prev = s->gpio_out1;
-            s->gpio_out1 &= ~value;
-            qemu_log("OUT1_W1TC_REG write: val=0x%" PRIx64 ", prev=0x%" PRIx64 ", new=0x%" PRIx64 "\n", value, prev, s->gpio_out1);
-            if (value & (1ULL << 1)) { // GPIO33 CLEAR
-                qemu_log("GPIO33 CLEAR (via OUT1_W1TC_REG)\n");
+            if (value & (1 << (37 - 32))) {
+                qemu_log("GPIO37 (DC) set HIGH\n");
                 if (s->st7789_ssi) {
-                    st7789_set_cs(s->st7789_ssi, true); // CS active (LOW)
+                    st7789_set_dc(s->st7789_ssi, true);
                 }
             }
+            s->gpio_out1 = new_val;
+            qemu_log("GPIO OUT1 W1TS write: val=0x%08x\n", (uint32_t)value);
             break;
-        }
 
+        case 0x18: // GPIO_OUT1_W1TC_REG (Clear GPIO32–39 LOW)
+            new_val = s->gpio_out1 & ~(uint32_t)value;
+            if ((new_val ^ s->gpio_out1) & (1 << 1)) {  // GPIO33 changed
+                bool cs = !(new_val & (1 << 1)); // CS active LOW
+                if (s->st7789_ssi) {
+                    st7789_set_cs(s->st7789_ssi, cs);
+                    qemu_log("GPIO33 -> ST7789 CS %s\n", cs ? "LOW (ACTIVE)" : "HIGH (INACTIVE)");
+                }
+            }
+            if (value & (1 << (37 - 32))) {
+                qemu_log("GPIO37 (DC) set LOW\n");
+                if (s->st7789_ssi) {
+                    st7789_set_dc(s->st7789_ssi, false);
+                }
+            }
+            s->gpio_out1 = new_val;
+            qemu_log("GPIO OUT1 W1TC write: val=0x%08x\n", (uint32_t)value);
+            break;
 
+        case 0x24: // GPIO_OUT_W1TS_REG
+            s->gpio_out |= (uint32_t)value;
+            //qemu_log("GPIO OUT W1TS write: val=0x%08x\n", (uint32_t)value);
+            break;
+
+        case 0x28: // GPIO_OUT_W1TC_REG
+            s->gpio_out &= ~(uint32_t)value;
+            //qemu_log("GPIO OUT W1TC write: val=0x%08x\n", (uint32_t)value);
+            break;
+
+        case 0x4C: // GPIO_ENABLE_REG
+            s->gpio_enable = (uint32_t)value;
+            qemu_log("GPIO ENABLE write: val=0x%08x\n", s->gpio_enable);
+            break;
 
         default:
-            qemu_log("GPIO write to unhandled addr: 0x%"HWADDR_PRIx", value: 0x%"PRIx64"\n", addr, value);
+            qemu_log_mask(LOG_GUEST_ERROR,
+                "GPIO WRITE: addr=0x%" HWADDR_PRIx " (UNKNOWN), value=0x%" PRIx64 "\n",
+                addr, value);
             break;
     }
 }
-
 
 
 static const MemoryRegionOps uart_ops = {

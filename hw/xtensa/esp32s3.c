@@ -856,13 +856,8 @@ MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->spi2), 0);
 memory_region_add_subregion_overlap(sys_mem, DR_REG_SPI2_BASE, mr, 0);
 }
 {
-// Instantiate SPI3 controller
 object_initialize_child(OBJECT(ss), "spi3", &ss->spi3, TYPE_ESP32S3_SPI);
-
-// Realize it
 sysbus_realize(SYS_BUS_DEVICE(&ss->spi3), &error_fatal);
-
-// Map its MMIO region
 MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->spi3), 0);
 memory_region_add_subregion_overlap(sys_mem, DR_REG_SPI3_BASE, mr, 0);
 }
@@ -872,7 +867,7 @@ DeviceState *spi3_dev = DEVICE(&ss->spi3);
 DeviceState *st7789_dev = qdev_new("st7789");
 qdev_prop_set_uint32(st7789_dev, "cs", 0);
 qdev_realize(st7789_dev, qdev_get_child_bus(spi3_dev, "spi"), &error_fatal);
-
+ss->gpio.parent.st7789_ssi = SSI_PERIPHERAL(st7789_dev);
 }
 
 
