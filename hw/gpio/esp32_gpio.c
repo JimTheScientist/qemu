@@ -194,17 +194,17 @@ static void esp32_gpio_write(void *opaque, hwaddr addr, uint64_t value, unsigned
                 bool cs = !(new_val & (1 << 1)); // CS active LOW
                 if (s->st7789_ssi) {
                     st7789_set_cs(s->st7789_ssi, cs);
-                    qemu_log("GPIO33 -> ST7789 CS %s\n", cs ? "LOW (ACTIVE)" : "HIGH (INACTIVE)");
+                    //qemu_log("GPIO33 -> ST7789 CS %s\n", cs ? "LOW (ACTIVE)" : "HIGH (INACTIVE)");
                 }
             }
             if (value & (1 << (37 - 32))) {
-                qemu_log("GPIO37 (DC) set HIGH\n");
+                //qemu_log("GPIO37 (DC) set HIGH\n");
                 if (s->st7789_ssi) {
                     st7789_set_dc(s->st7789_ssi, true);
                 }
             }
             s->gpio_out1 = new_val;
-            qemu_log("GPIO OUT1 W1TS write: val=0x%08x\n", (uint32_t)value);
+            //qemu_log("GPIO OUT1 W1TS write: val=0x%08x\n", (uint32_t)value);
             break;
 
         case 0x18: // GPIO_OUT1_W1TC_REG (Clear GPIO32–39 LOW)
@@ -213,17 +213,17 @@ static void esp32_gpio_write(void *opaque, hwaddr addr, uint64_t value, unsigned
                 bool cs = !(new_val & (1 << 1)); // CS active LOW
                 if (s->st7789_ssi) {
                     st7789_set_cs(s->st7789_ssi, cs);
-                    qemu_log("GPIO33 -> ST7789 CS %s\n", cs ? "LOW (ACTIVE)" : "HIGH (INACTIVE)");
+                    //qemu_log("GPIO33 -> ST7789 CS %s\n", cs ? "LOW (ACTIVE)" : "HIGH (INACTIVE)");
                 }
             }
             if (value & (1 << (37 - 32))) {
-                qemu_log("GPIO37 (DC) set LOW\n");
+                //qemu_log("GPIO37 (DC) set LOW\n");
                 if (s->st7789_ssi) {
                     st7789_set_dc(s->st7789_ssi, false);
                 }
             }
             s->gpio_out1 = new_val;
-            qemu_log("GPIO OUT1 W1TC write: val=0x%08x\n", (uint32_t)value);
+            //qemu_log("GPIO OUT1 W1TC write: val=0x%08x\n", (uint32_t)value);
             break;
 
         case 0x24: // GPIO_OUT_W1TS_REG

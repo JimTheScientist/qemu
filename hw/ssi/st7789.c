@@ -11,7 +11,6 @@
 #include "ui/console.h"        // already included — good
 #include <pixman.h>
 
-#define PIXMAN_RGB565 0x3 /* pixel format for 16bpp RGB565 */
 #define TYPE_ST7789 "st7789"
 OBJECT_DECLARE_SIMPLE_TYPE(ST7789State, ST7789)
 
@@ -88,7 +87,7 @@ int st7789_set_cs(SSIPeripheral *dev, bool cs_active)
     // Store cs_active in state to track it in transfer_raw
     s->cs_active = cs_active;
 
-    qemu_log("ST7789 CS %s\n", cs_active ? "asserted" : "deasserted");
+    //qemu_log("ST7789 CS %s\n", cs_active ? "asserted" : "deasserted");
 
     return cs_active;
 }
@@ -97,7 +96,7 @@ int st7789_set_dc(SSIPeripheral *dev, bool dc_level) {
     ST7789State *s = ST7789(dev);
     s->dc_level = dc_level;
 
-    qemu_log("GPIO37 (DC) set %s\n", dc_level ? "HIGH" : "LOW");
+    //qemu_log("GPIO37 (DC) set %s\n", dc_level ? "HIGH" : "LOW");
     return 0;
 }
 
@@ -254,6 +253,7 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
     bool is_command = !s->dc_level;
     if (!(s->cs_active)) return 0;
     uint8_t byte = value & 0xFF;
+    //qemu_log("ST7789 value: 0x%X\n", value);
 
     if (is_command) {
         s->current_command = byte;
@@ -261,7 +261,6 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
         s->param_expected = 0;
         s->expecting_command = false;
 
-        //qemu_log("ST7789 CMD: 0x%02X\n", byte);
 
         switch (byte) {
             case 0x2A: // CASET
@@ -315,7 +314,7 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
                 s->expecting_command = true;
             }
         } else if (s->current_command == 0x2C) {
-            qemu_log("writing pixel data");
+            //qemu_log("writing pixel data");
             // Write RGB565 pixel data
             s->param_buf[s->param_len++] = byte;
             if (s->param_len == 2) {
@@ -325,6 +324,7 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
                 // Draw pixel
                 int draw_x, draw_y;
                 st7789_transform_coords(s, s->x, s->y, &draw_x, &draw_y);
+                //qemu_log("DRAW at (%d, %d): color=0x%04x\n", draw_x, draw_y, color);
 
                 if (draw_x >= 0 && draw_x < s->width &&
                     draw_y >= 0 && draw_y < s->height) {
@@ -339,7 +339,6 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
                         s->y = s->row_start;  // wraparound
                     }
                 }
-                qemu_console_resize(s->con, s->width, s->height);
                 dpy_gfx_update(s->con, 0, 0, s->width, s->height);
             }
         } else {
@@ -367,8 +366,7 @@ static void st7789_realize(SSIPeripheral *dev, Error **errp)
     int linesize = s->width * 2; // 2 bytes per pixel for RGB565
     s->fb = g_malloc0(sizeof(uint16_t) * s->width * s->height);
     qemu_log("Creating display surface w=%d h=%d depth=15 linesize=%d\n", s->width, s->height, linesize);
-    pixman_format_code_t format;
-    format = qemu_default_pixman_format(16, 1);
+    pixman_format_code_t format = PIXMAN_r5g6b5;
     s->ds = qemu_create_displaysurface_from(
                 s->width,
                 s->height,
@@ -380,9 +378,8 @@ static void st7789_realize(SSIPeripheral *dev, Error **errp)
         error_setg(errp, "Failed to create display surface");
         return;
     }
-
     s->con = graphic_console_init(DEVICE(dev), 0, &st7789_ops, s);
-
+    dpy_gfx_replace_surface(s->con, s->ds);
     //SSIPeripheralClass *pc = SSI_PERIPHERAL_GET_CLASS(dev);
     //if (pc->realize) {
     //    pc->realize(dev, errp);

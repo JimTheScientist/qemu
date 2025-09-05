@@ -145,7 +145,7 @@ static void esp32s3_spi_txrx_buffer(ESP32S3SpiState *s,
         if (byte < tx_bytes) {
             memcpy(&byte, tx + i, 1);
         }
-        qemu_log("ssi byte 0x%X \n", byte);
+        //qemu_log("ssi byte 0x%X \n", byte);
         uint32_t res = ssi_transfer(s->spi, byte);
         if (byte < rx_bytes) {
             memcpy(rx + i, &res, 1);
@@ -376,10 +376,45 @@ static void esp32s3_spi_write(void *opaque, hwaddr addr,
     ESP32S3SpiState *s = ESP32S3_SPI(opaque);
     uint32_t wvalue = (uint32_t) value;
 
-//#if SPI1_DEBUG
+#if SPI1_DEBUG
     info_report("[SPI1] Writing 0x%lx = %08lx", addr, value);
-//#endif
-
+#endif
+    if (spi3_sent == 2) {
+    switch (addr) {
+        case 0x9c:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xa0:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xa4:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xa8:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xac:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xb0:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xb4:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xb8:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xbc:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xc0:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xc4:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xc8:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xcc:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xd0:
+        ssi_transfer(s->spi, wvalue);            break;
+        case 0xd4:
+        ssi_transfer(s->spi, wvalue);            break;
+default:
+    break;
+}
+    }
     switch (addr) {
         case A_SPI_MEM_CMD:
             if (spi3_sent != 0) {
@@ -392,42 +427,11 @@ static void esp32s3_spi_write(void *opaque, hwaddr addr,
             }}
             break;
         case 0x98:
-            info_report("[SPI3] Writing %08x", wvalue);
+            //info_report("[SPI3] Writing %08x", wvalue);
 
             ssi_transfer(s->spi, wvalue);
             spi3_sent = 2;
             break;
-        case 0x9c:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xa0:
-            ssi_transfer(s->spi, wvalue);            break;
-        //case 0xa4:
-        //    s->data_reg[(addr - A_SPI_MEM_W0) / sizeof(uint32_t)] = wvalue;
-        //    break;
-        case 0xa8:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xac:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xb0:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xb4:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xb8:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xbc:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xc0:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xc4:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xc8:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xcc:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xd0:
-            ssi_transfer(s->spi, wvalue);            break;
-        case 0xd4:
-            ssi_transfer(s->spi, wvalue);            break;
         case A_SPI_MEM_ADDR:
             s->mem_addr = wvalue;
             break;
@@ -480,9 +484,9 @@ static void esp32s3_spi_write(void *opaque, hwaddr addr,
             s->clock_gate = wvalue;
             break;
         default:
-//#if SPI1_WARNING
+#if SPI1_WARNING
             warn_report("[SPI1] Unsupported write to 0x%lx (%08lx)", addr, value);
-//#endif
+#endif
             break;
     }
 }

@@ -636,7 +636,7 @@ static void esp32s3_machine_init(MachineState *machine)
     object_initialize_child(OBJECT(ss), "timg0", &ss->timg[0], TYPE_ESP32S3_TIMG);
     object_initialize_child(OBJECT(ss), "timg1", &ss->timg[1], TYPE_ESP32S3_TIMG);
     object_initialize_child(OBJECT(ss), "systimer", &ss->systimer, TYPE_ESP32S3_SYSTIMER);
-    object_initialize_child(OBJECT(ss), "rgb", &ss->rgb, TYPE_ESP_RGB);
+    //object_initialize_child(OBJECT(ss), "rgb", &ss->rgb, TYPE_ESP_RGB);
 
     DeviceState* intmatrix_dev = DEVICE(&ss->intmatrix);
     {
@@ -839,15 +839,15 @@ static void esp32s3_machine_init(MachineState *machine)
         memory_region_add_subregion_overlap(sys_mem, DR_REG_AES_XTS_BASE, mr, 0);
     }
 
-    /* RGB display realization */
-    {
-        /* Give the internal RAM memory region to the display */
-        ss->rgb.intram = dram;
-        sysbus_realize(SYS_BUS_DEVICE(&ss->rgb), &error_fatal);
-        MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->rgb), 0);
-        memory_region_add_subregion_overlap(sys_mem, DR_REG_FRAMEBUF_BASE, mr, 0);
-        memory_region_add_subregion_overlap(sys_mem, esp32s3_memmap[ESP32S3_MEMREGION_FRAMEBUF].base, &ss->rgb.vram, 0);
-    }
+    ///* RGB display realization */
+    //{
+    //    /* Give the internal RAM memory region to the display */
+    //    ss->rgb.intram = dram;
+    //    sysbus_realize(SYS_BUS_DEVICE(&ss->rgb), &error_fatal);
+    //    MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->rgb), 0);
+    //    memory_region_add_subregion_overlap(sys_mem, DR_REG_FRAMEBUF_BASE, mr, 0);
+    //    memory_region_add_subregion_overlap(sys_mem, esp32s3_memmap[ESP32S3_MEMREGION_FRAMEBUF].base, &ss->rgb.vram, 0);
+    //}
 
 {
 object_initialize_child(OBJECT(ss), "spi2", &ss->spi2, TYPE_ESP32S3_SPI);
