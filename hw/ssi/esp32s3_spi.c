@@ -376,9 +376,9 @@ static void esp32s3_spi_write(void *opaque, hwaddr addr,
     ESP32S3SpiState *s = ESP32S3_SPI(opaque);
     uint32_t wvalue = (uint32_t) value;
 
-#if SPI1_DEBUG
+//#if SPI1_DEBUG
     info_report("[SPI1] Writing 0x%lx = %08lx", addr, value);
-#endif
+//#endif
     if (spi3_sent == 2) {
     switch (addr) {
         case 0x9c:
@@ -484,9 +484,9 @@ default:
             s->clock_gate = wvalue;
             break;
         default:
-#if SPI1_WARNING
+//#if SPI1_WARNING
             warn_report("[SPI1] Unsupported write to 0x%lx (%08lx)", addr, value);
-#endif
+//#endif
             break;
     }
 }
