@@ -51,8 +51,7 @@ typedef struct ST7789State {
     int col_start, col_end;
     int row_start, row_end;
     uint8_t madctl;
-    uint16_t draw_x, draw_y;
-    uint32_t draw_pixels_remaining;
+
 } ST7789State;
 
 static void st7789_update_display(void *opaque)
@@ -120,32 +119,28 @@ static void st7789_reset(DeviceState *dev)
 //    return 0;
 //}
 
-static void st7789_transform_coords(ST7789State *s, int x, int y, int *out_x, int *out_y) {
-    bool mx = (s->madctl & 0x40); // Horizontal mirror
-    bool my = (s->madctl & 0x80); // Vertical mirror
-    bool mv = (s->madctl & 0x20); // Row/column exchange
+static void st7789_transform_coords(ST7789State *s, int in_x, int in_y, int *out_x, int *out_y)
+{
+    int x = in_x;
+    int y = in_y;
 
-    int tx = x;
-    int ty = y;
-
-    if (mv) {
-        int tmp = tx;
-        tx = ty;
-        ty = tmp;
+    if (s->madctl & 0x20) {  // MV: row/col swap (rotate 90)
+        int tmp = x;
+        x = y;
+        y = tmp;
     }
 
-    if (mx) {
-        tx = s->width - 1 - tx;
+    if (s->madctl & 0x40) {  // MX: mirror x
+        x = s->width - 1 - x;
     }
 
-    if (my) {
-        ty = s->height - 1 - ty;
+    if (s->madctl & 0x80) {  // MY: mirror y
+        y = s->height - 1 - y;
     }
 
-    *out_x = tx;
-    *out_y = ty;
+    *out_x = x;
+    *out_y = y;
 }
-
 //static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
 //{
 //    ST7789State *s = ST7789(dev);
@@ -258,8 +253,8 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
     bool is_command = !s->dc_level;
     if (!(s->cs_active)) return 0;
     uint8_t byte = value & 0xFF;
-    qemu_log("ST7789 value: 0x%X\n", value);
-    return 0;
+    //qemu_log("ST7789 value: 0x%X\n", value);
+
     if (is_command) {
         s->current_command = byte;
         s->param_len = 0;
@@ -272,28 +267,13 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
             case 0x2B: // RASET
                 s->param_expected = 4;
                 break;
-            case 0x36:
-                s->madctl = s->param_buf[0];
-                qemu_log("ST7789 MADCTL = 0x%02X (MX=%d, MY=%d, MV=%d)\n",
-                         s->madctl,
-                         !!(s->madctl & 0x40),
-                         !!(s->madctl & 0x80),
-                         !!(s->madctl & 0x20));
+            case 0x36:  // MADCTL
+                s->param_expected = 1;
                 break;
-
             case 0x2C: // RAMWR
-                s->param_expected = -1;  // variable-length
-                s->draw_x = s->col_start;
-                s->draw_y = s->row_start;
-
-                if (s->col_end >= s->col_start && s->row_end >= s->row_start) {
-                    s->draw_pixels_remaining = (s->col_end - s->col_start + 1) *
-                                               (s->row_end - s->row_start + 1);
-                } else {
-                    s->draw_pixels_remaining = 0;  // invalid range
-                    qemu_log("ST7789: Invalid draw window: col [%d-%d], row [%d-%d]\n",
-                        s->col_start, s->col_end, s->row_start, s->row_end);
-                }
+                s->param_expected = -1;  // variable length
+                s->x = s->col_start;
+                s->y = s->row_start;
                 break;
             case 0x3A:
             case 0x20:
@@ -334,34 +314,33 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
                 s->expecting_command = true;
             }
         } else if (s->current_command == 0x2C) {
+            //qemu_log("writing pixel data");
+            // Write RGB565 pixel data
             s->param_buf[s->param_len++] = byte;
             if (s->param_len == 2) {
-                s->param_len = 0;
-                if (s->draw_pixels_remaining == 0) {
-                    qemu_log("ST7789: Unexpected pixel data, no pixels remaining\n");
-                    return 0;
-                }
-
                 uint16_t color = (s->param_buf[0] << 8) | s->param_buf[1];
+                s->param_len = 0;
 
+                // Draw pixel
                 int draw_x, draw_y;
-                st7789_transform_coords(s, s->draw_x, s->draw_y, &draw_x, &draw_y);
+                st7789_transform_coords(s, s->x, s->y, &draw_x, &draw_y);
+                //qemu_log("DRAW at (%d, %d): color=0x%04x\n", draw_x, draw_y, color);
+
                 if (draw_x >= 0 && draw_x < s->width &&
                     draw_y >= 0 && draw_y < s->height) {
                     s->fb[draw_y * s->width + draw_x] = color;
                     }
 
-                // Advance to next pixel
-                s->draw_x++;
-                if (s->draw_x > s->col_end) {
-                    s->draw_x = s->col_start;
-                    s->draw_y++;
+                s->x++;
+                if (s->x > s->col_end) {
+                    s->x = s->col_start;
+                    s->y++;
+                    if (s->y > s->row_end) {
+                        s->y = s->row_start;  // wraparound
+                    }
                 }
-
-                s->draw_pixels_remaining--;
                 dpy_gfx_update(s->con, 0, 0, s->width, s->height);
             }
-
         } else {
             // Unknown data phase
             qemu_log("ST7789 Unexpected DATA 0x%02x for CMD 0x%02x\n", byte, s->current_command);
