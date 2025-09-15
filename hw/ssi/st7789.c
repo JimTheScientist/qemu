@@ -253,7 +253,7 @@ static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
     bool is_command = !s->dc_level;
     if (!(s->cs_active)) return 0;
     uint8_t byte = value & 0xFF;
-    //qemu_log("ST7789 value: 0x%X\n", value);
+    qemu_log("ST7789 value: 0x%X\n", value);
 
     if (is_command) {
         s->current_command = byte;

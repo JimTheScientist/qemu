@@ -50,7 +50,8 @@ typedef struct ESP32S3SpiState {
     uint32_t ddr_ctrl;
     uint32_t clock_gate;
     ESP32S3XtsAesState *xts_aes;
-    int spi_index;
+    uint32_t spi_num;
+    uint32_t slave_reg;
 } ESP32S3SpiState;
 
 

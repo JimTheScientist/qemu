@@ -25,6 +25,19 @@
 #define SPI1_WARNING    0
 
 
+#define S3_SPI_CMD_REG 0x00
+#define S3_SPI_W0_REG 0x98
+#define S3_SPI_W15_REG 0xD4
+#define S3_SPI_MISC_REG 0x20
+#define S3_SPI_USER_REG 0x10
+#define S3_SPI_USER1_REG 0x14
+#define S3_SPI_USER2_REG 0x18
+#define S3_SPI_CTRL_REG 0x08
+#define S3_SPI_CLK_GATE_REG 0xE8
+#define S3_SPI_DMA_CONF_REF 0x30
+#define S3_SPI_SLAVE_REG 0xE0
+#define S3_SPI_CLOCK_REG 0x0C
+
 enum {
     CMD_RES = 0xab,
     CMD_DP = 0xb9,
@@ -62,75 +75,101 @@ static uint64_t esp32s3_spi_read(void *opaque, hwaddr addr, unsigned int size)
     ESP32S3SpiState *s = ESP32S3_SPI(opaque);
 
     uint64_t r = 0;
-    switch (addr) {
-        case A_SPI_MEM_CMD:
+    switch (s->spi_num) {
+        case 1: {
+            switch (addr) {
+                case A_SPI_MEM_CMD:
+                    r = 0;
+                    break;
+                case A_SPI_MEM_ADDR:
+                    r = s->mem_addr;
+                    break;
+                case A_SPI_MEM_CTRL:
+                    r = s->mem_ctrl;
+                    break;
+                case A_SPI_MEM_CTRL1:
+                    r = s->mem_ctrl1;
+                    break;
+                case A_SPI_MEM_CTRL2:
+                    r = s->mem_ctrl2;
+                    break;
+                case A_SPI_MEM_CLOCK:
+                    r = s->mem_clock;
+                    break;
+                case A_SPI_MEM_USER:
+                    r = s->mem_user;
+                    break;
+                case A_SPI_MEM_USER1:
+                    r = s->mem_user1;
+                    break;
+                case A_SPI_MEM_USER2:
+                    r = s->mem_user2;
+                    break;
+                case A_SPI_MEM_MISO_DLEN:
+                    r = s->mem_miso_len;
+                    break;
+                case A_SPI_MEM_MOSI_DLEN:
+                    r = s->mem_mosi_len;
+                    break;
+                case A_SPI_MEM_RD_STATUS:
+                    r = s->mem_rd_st;
+                    break;
+                case A_SPI_MEM_MISC:
+                    r = s->misc;
+                    break;
+                case A_SPI_MEM_CACHE_FCTRL:
+                    r = s->cache_fctrl;
+                    break;
+                case A_SPI_MEM_FSM:
+                    r = s->fsm;
+                    break;
+                case A_SPI_MEM_W0...A_SPI_MEM_W15:
+                    r = s->data_reg[(addr - A_SPI_MEM_W0) / sizeof(uint32_t)];
+                    break;
+                case A_SPI_MEM_SUS_STATUS:
+                    r = s->mem_sus_st;
+                    break;
+                case A_SPI_MEM_DDR_CTRL:
+                    r = s->ddr_ctrl;
+                    break;
+                case A_SPI_MEM_CLOCK_GATE:
+                    r = s->clock_gate;
+                    break;
+                default:
+        #if SPI1_WARNING
+                    warn_report("[SPI1] Unsupported read to 0x%lx", addr);
+        #endif
+                    break;
+            }
+
+        #if SPI1_DEBUG
+            info_report("[SPI1] Reading 0x%lx (0x%lx)", addr, r);
+        #endif
+        } break;
+        case 3:
+        {
+            switch (addr) {
+                case S3_SPI_DMA_CONF_REF:
+                    r = s->ddr_ctrl;
+                    break;
+                case S3_SPI_CLK_GATE_REG:
+                    r = s->clock_gate;
+                    break;
+                case S3_SPI_USER_REG:
+                    r = s->mem_user;
+                    break;
+                default:
+//#if SPI1_WARNING
+                    warn_report("[SPI3] Unsupported read to 0x%lx", addr);
+//#endif
+                    break;
+            }
+        } break;
+
+        default:
             r = 0;
             break;
-        case A_SPI_MEM_ADDR:
-            r = s->mem_addr;
-            break;
-        case A_SPI_MEM_CTRL:
-            r = s->mem_ctrl;
-            break;
-        case A_SPI_MEM_CTRL1:
-            r = s->mem_ctrl1;
-            break;
-        case A_SPI_MEM_CTRL2:
-            r = s->mem_ctrl2;
-            break;
-        case A_SPI_MEM_CLOCK:
-            r = s->mem_clock;
-            break;
-        case A_SPI_MEM_USER:
-            r = s->mem_user;
-            break;
-        case A_SPI_MEM_USER1:
-            r = s->mem_user1;
-            break;
-        case A_SPI_MEM_USER2:
-            r = s->mem_user2;
-            break;
-        case A_SPI_MEM_MISO_DLEN:
-            r = s->mem_miso_len;
-            break;
-        case A_SPI_MEM_MOSI_DLEN:
-            r = s->mem_mosi_len;
-            break;
-        case A_SPI_MEM_RD_STATUS:
-            r = s->mem_rd_st;
-            break;
-        case A_SPI_MEM_MISC:
-            r = s->misc;
-            break;
-        case A_SPI_MEM_CACHE_FCTRL:
-            r = s->cache_fctrl;
-            break;
-        case A_SPI_MEM_FSM:
-            r = s->fsm;
-            break;
-        case A_SPI_MEM_W0...A_SPI_MEM_W15:
-            r = s->data_reg[(addr - A_SPI_MEM_W0) / sizeof(uint32_t)];
-            break;
-        case A_SPI_MEM_SUS_STATUS:
-            r = s->mem_sus_st;
-            break;
-        case A_SPI_MEM_DDR_CTRL:
-            r = s->ddr_ctrl;
-            break;
-        case A_SPI_MEM_CLOCK_GATE:
-            r = s->clock_gate;
-            break;
-        default:
-#if SPI1_WARNING
-            warn_report("[SPI1] Unsupported read to 0x%lx", addr);
-#endif
-            break;
     }
-
-#if SPI1_DEBUG
-    info_report("[SPI1] Reading 0x%lx (0x%lx)", addr, r);
-#endif
-
     return r;
 }
 
@@ -369,126 +408,139 @@ static void esp32s3_spi_special_command(ESP32S3SpiState *s, uint32_t command)
     esp32s3_spi_perform_transaction(s, &t);
 }
 
-int spi3_sent = 0;
 static void esp32s3_spi_write(void *opaque, hwaddr addr,
                        uint64_t value, unsigned int size)
 {
     ESP32S3SpiState *s = ESP32S3_SPI(opaque);
     uint32_t wvalue = (uint32_t) value;
 
-#if SPI1_DEBUG
-    info_report("[SPI1] Writing 0x%lx = %08lx", addr, value);
-#endif
-    if (spi3_sent == 2) {
-    switch (addr) {
-        case 0x9c:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xa0:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xa4:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xa8:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xac:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xb0:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xb4:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xb8:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xbc:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xc0:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xc4:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xc8:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xcc:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xd0:
-        ssi_transfer(s->spi, wvalue);            break;
-        case 0xd4:
-        ssi_transfer(s->spi, wvalue);            break;
-default:
-    break;
-}
-    }
-    switch (addr) {
-        case A_SPI_MEM_CMD:
-            if (spi3_sent != 0) {
-                spi3_sent--;
-            } else {
-            if(wvalue & R_SPI_MEM_CMD_USR_MASK) {
-                esp32s3_spi_begin_transaction(s);
-            } else {
-                esp32s3_spi_special_command(s, wvalue);
-            }}
-            break;
-        case 0x98:
-            //info_report("[SPI3] Writing %08x", wvalue);
 
-            ssi_transfer(s->spi, wvalue);
-            spi3_sent = 2;
-            break;
-        case A_SPI_MEM_ADDR:
-            s->mem_addr = wvalue;
-            break;
-        case A_SPI_MEM_CTRL:
-            s->mem_ctrl = wvalue;
-            break;
-        case A_SPI_MEM_CTRL1:
-            s->mem_ctrl1 = wvalue;
-            break;
-        case A_SPI_MEM_CTRL2:
-            s->mem_ctrl2 = wvalue;
-            break;
-        case A_SPI_MEM_CLOCK:
-            s->mem_clock = wvalue;
-            break;
-        case A_SPI_MEM_USER:
-            s->mem_user = wvalue;
-            break;
-        case A_SPI_MEM_USER1:
-            s->mem_user1 = wvalue;
-            break;
-        case A_SPI_MEM_USER2:
-            s->mem_user2 = wvalue;
-            break;
-        case A_SPI_MEM_MISO_DLEN:
-            s->mem_miso_len = wvalue;
-            break;
-        case A_SPI_MEM_MOSI_DLEN:
-            s->mem_mosi_len = wvalue;
-            break;
-        case A_SPI_MEM_RD_STATUS:
-            s->mem_rd_st = wvalue;
-            break;
-        case A_SPI_MEM_MISC:
-            s->misc = wvalue;
-            break;
-        case A_SPI_MEM_CACHE_FCTRL:
-            s->cache_fctrl = wvalue;
-            break;
-        case A_SPI_MEM_W0...A_SPI_MEM_W15:
-            s->data_reg[(addr - A_SPI_MEM_W0) / sizeof(uint32_t)] = wvalue;
-            break;
-        case A_SPI_MEM_SUS_STATUS:
-            s->mem_sus_st = wvalue;
-            break;
-        case A_SPI_MEM_DDR_CTRL:
-            s->ddr_ctrl = wvalue;
-            break;
-        case A_SPI_MEM_CLOCK_GATE:
-            s->clock_gate = wvalue;
-            break;
+    switch (s->spi_num) {
+        case 1: {
+            #if SPI1_DEBUG
+                info_report("[SPI1] Writing 0x%lx = %08lx", addr, value);
+            #endif
+
+            switch (addr) {
+                case A_SPI_MEM_CMD:
+                    if(wvalue & R_SPI_MEM_CMD_USR_MASK) {
+                        esp32s3_spi_begin_transaction(s);
+                    } else {
+                        esp32s3_spi_special_command(s, wvalue);
+                    }
+                    break;
+                case A_SPI_MEM_ADDR:
+                    s->mem_addr = wvalue;
+                    break;
+                case A_SPI_MEM_CTRL:
+                    s->mem_ctrl = wvalue;
+                    break;
+                case A_SPI_MEM_CTRL1:
+                    s->mem_ctrl1 = wvalue;
+                    break;
+                case A_SPI_MEM_CTRL2:
+                    s->mem_ctrl2 = wvalue;
+                    break;
+                case A_SPI_MEM_CLOCK:
+                    s->mem_clock = wvalue;
+                    break;
+                case A_SPI_MEM_USER:
+                    s->mem_user = wvalue;
+                    break;
+                case A_SPI_MEM_USER1:
+                    s->mem_user1 = wvalue;
+                    break;
+                case A_SPI_MEM_USER2:
+                    s->mem_user2 = wvalue;
+                    break;
+                case A_SPI_MEM_MISO_DLEN:
+                    s->mem_miso_len = wvalue;
+                    break;
+                case A_SPI_MEM_MOSI_DLEN:
+                    s->mem_mosi_len = wvalue;
+                    break;
+                case A_SPI_MEM_RD_STATUS:
+                    s->mem_rd_st = wvalue;
+                    break;
+                case A_SPI_MEM_MISC:
+                    s->misc = wvalue;
+                    break;
+                case A_SPI_MEM_CACHE_FCTRL:
+                    s->cache_fctrl = wvalue;
+                    break;
+                case A_SPI_MEM_W0...A_SPI_MEM_W15:
+                    s->data_reg[(addr - A_SPI_MEM_W0) / sizeof(uint32_t)] = wvalue;
+                    break;
+                case A_SPI_MEM_SUS_STATUS:
+                    s->mem_sus_st = wvalue;
+                    break;
+                case A_SPI_MEM_DDR_CTRL:
+                    s->ddr_ctrl = wvalue;
+                    break;
+                case A_SPI_MEM_CLOCK_GATE:
+                    s->clock_gate = wvalue;
+                    break;
+                default:
+        #if SPI1_WARNING
+                    warn_report("[SPI1] Unsupported write to 0x%lx (%08lx)", addr, value);
+        #endif
+                    break;
+            }
+        } break;
+        case 3: {
+            //warn_report("[SPI3] detected");
+            info_report("[SPI3] Writing 0x%lx = %08lx", addr, value);
+
+            switch (addr) {
+                case S3_SPI_CMD_REG:
+                    if(wvalue & R_SPI_MEM_CMD_USR_MASK) {
+                        esp32s3_spi_begin_transaction(s);
+                    } else {
+                        esp32s3_spi_special_command(s, wvalue);
+                    }
+                    break;
+                case S3_SPI_MISC_REG:
+                    s->misc = wvalue;
+                    break;
+                case S3_SPI_USER_REG:
+                    s->mem_user = wvalue;
+                    break;
+                case S3_SPI_USER1_REG:
+                    s->mem_user1 = wvalue;
+                    break;
+                case S3_SPI_USER2_REG:
+                    s->mem_user2 = wvalue;
+                    break;
+                case S3_SPI_CTRL_REG:
+                    s->mem_ctrl = wvalue;
+                    break;
+                case S3_SPI_CLK_GATE_REG:
+                    s->clock_gate = wvalue;
+                    break;
+                case S3_SPI_DMA_CONF_REF:
+                    s->ddr_ctrl = wvalue;
+                    break;
+                case S3_SPI_SLAVE_REG:
+                    s->slave_reg = wvalue;
+                    break;
+                case S3_SPI_CLOCK_REG:
+                    s->mem_clock = wvalue;
+                    break;
+                case S3_SPI_W0_REG...S3_SPI_W15_REG:
+                    s->data_reg[(addr - A_SPI_MEM_W0) / sizeof(uint32_t)] = wvalue;
+                    break;
+                default:
+        //#if SPI1_WARNING
+                    warn_report("[SPI3] Unsupported write to 0x%lx (%08lx)", addr, value);
+        //#endif
+                    break;
+            }
+        } break;
         default:
-#if SPI1_WARNING
-            warn_report("[SPI1] Unsupported write to 0x%lx (%08lx)", addr, value);
-#endif
             break;
+
     }
+
 }
 
 
@@ -513,7 +565,7 @@ static void esp32s3_spi_reset_hold(Object *obj, ResetType type)
     s->mem_user1 = FIELD_DP32(s->mem_user1, SPI_MEM_USER1, USR_DUMMY_CYCLELEN, 7);
 
     s->mem_user2 = FIELD_DP32(s->mem_user2, SPI_MEM_USER2, USR_COMMAND_BITLEN, 7);
-
+    s->slave_reg = 0;
     /* In case more registers are supported in the future (MEM_MISC, MEM_TX_CRC, ...)
      * update this function with their default values */
 }
@@ -546,6 +598,7 @@ static void esp32s3_spi_init(Object *obj)
 }
 
 static Property esp32s3_spi_properties[] = {
+    DEFINE_PROP_UINT32("spi-num", ESP32S3SpiState, spi_num, 1),
     DEFINE_PROP_END_OF_LIST(),
 };
 
