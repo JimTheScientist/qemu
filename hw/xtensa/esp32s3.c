@@ -851,6 +851,7 @@ static void esp32s3_machine_init(MachineState *machine)
 
 {
 object_initialize_child(OBJECT(ss), "spi2", &ss->spi2, TYPE_ESP32S3_SPI);
+qdev_prop_set_uint32(DEVICE(&ss->spi2), "spi-num", 3);
 sysbus_realize(SYS_BUS_DEVICE(&ss->spi2), &error_fatal);
 MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->spi2), 0);
 memory_region_add_subregion_overlap(sys_mem, DR_REG_SPI2_BASE, mr, 0);

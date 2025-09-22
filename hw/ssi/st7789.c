@@ -247,13 +247,13 @@ static void st7789_transform_coords(ST7789State *s, int in_x, int in_y, int *out
 
 
 
-static uint32_t st7789_transfer_raw(SSIPeripheral *dev, uint32_t value)
+static uint32_t st7789_transfer(SSIPeripheral *dev, uint32_t value)
 {
     ST7789State *s = ST7789(dev);
     bool is_command = !s->dc_level;
     if (!(s->cs_active)) return 0;
     uint8_t byte = value & 0xFF;
-    qemu_log("ST7789 value: 0x%X\n", value);
+    //qemu_log("ST7789 value: 0x%X\n", value);
 
     if (is_command) {
         s->current_command = byte;
@@ -412,7 +412,7 @@ static void st7789_class_init(ObjectClass *klass, void *data)
     SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
 
     dc->desc = "ST7789 SPI LCD Display (Virtual)";
-    k->transfer_raw = st7789_transfer_raw;  // use transfer_raw now
+    k->transfer = st7789_transfer;  // use transfer_raw now
     k->realize = st7789_realize;
     k->set_cs = st7789_set_cs;
     k->cs_polarity = SSI_CS_LOW;

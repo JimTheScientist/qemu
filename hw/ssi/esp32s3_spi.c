@@ -37,6 +37,8 @@
 #define S3_SPI_DMA_CONF_REF 0x30
 #define S3_SPI_SLAVE_REG 0xE0
 #define S3_SPI_CLOCK_REG 0x0C
+#define S3_SPI_MS_DLEN_REG 0x1C
+#define S3_SPI_SLAVE_TRANS_START (1 << 18)
 
 enum {
     CMD_RES = 0xab,
@@ -149,6 +151,9 @@ static uint64_t esp32s3_spi_read(void *opaque, hwaddr addr, unsigned int size)
         case 3:
         {
             switch (addr) {
+                case S3_SPI_CMD_REG:
+                    r = 0;
+                    break;
                 case S3_SPI_DMA_CONF_REF:
                     r = s->ddr_ctrl;
                     break;
@@ -157,6 +162,22 @@ static uint64_t esp32s3_spi_read(void *opaque, hwaddr addr, unsigned int size)
                     break;
                 case S3_SPI_USER_REG:
                     r = s->mem_user;
+                    break;
+                case S3_SPI_MISC_REG:
+                    r = s->misc;
+                    break;
+                case S3_SPI_CTRL_REG:
+                    r = s->mem_ctrl;
+                    break;
+                case S3_SPI_MS_DLEN_REG:
+                    r = s->mem_miso_len;
+                    r = s->mem_mosi_len;
+                    break;
+                case S3_SPI_CLOCK_REG:
+                    r = s->mem_clock;
+                    break;
+                case S3_SPI_W0_REG...S3_SPI_W15_REG:
+                    r = s->data_reg[(addr - S3_SPI_W0_REG) / sizeof(uint32_t)];
                     break;
                 default:
 //#if SPI1_WARNING
@@ -173,24 +194,34 @@ static uint64_t esp32s3_spi_read(void *opaque, hwaddr addr, unsigned int size)
     return r;
 }
 
-
+/* fixed tx/rx helper: iterate by index and use i to compare against tx_bytes/rx_bytes */
 static void esp32s3_spi_txrx_buffer(ESP32S3SpiState *s,
                                     const void *tx, int tx_bytes,
                                     void *rx, int rx_bytes)
 {
+    const uint8_t *txb = (const uint8_t *)tx;
+    uint8_t *rxb = (uint8_t *)rx;
+
     int bytes = MAX(tx_bytes, rx_bytes);
     for (int i = 0; i < bytes; ++i) {
-        uint8_t byte = 0;
-        if (byte < tx_bytes) {
-            memcpy(&byte, tx + i, 1);
+        uint8_t out = 0;
+
+        /* if we have MOSI data for this index, take it; otherwise send 0 (clock) */
+        if (i < tx_bytes && txb) {
+            out = txb[i];
         }
-        //qemu_log("ssi byte 0x%X \n", byte);
-        uint32_t res = ssi_transfer(s->spi, byte);
-        if (byte < rx_bytes) {
-            memcpy(rx + i, &res, 1);
+
+        uint32_t res = ssi_transfer(s->spi, out);
+
+        /* ssi_transfer returns a 32-bit result; take bottom byte for MISO */
+        uint8_t in = (uint8_t)(res & 0xFF);
+
+        if (i < rx_bytes && rxb) {
+            rxb[i] = in;
         }
     }
 }
+
 
 static void esp32s3_spi_dummy_cycles(ESP32S3SpiState *s, uint32_t dummy_bytes) {
     for (int i = 0; i < dummy_bytes; i++) {
@@ -216,24 +247,79 @@ static void esp32s3_spi_cs_set(ESP32S3SpiState *s, int value)
     }
 }
 
+
+/* helper: copy bytes from data_reg (uint32_t words) into a byte buffer */
+static void copy_data_reg_bytes(ESP32S3SpiState *s, uint8_t *dst, unsigned nbytes)
+{
+    uint8_t *src = (uint8_t *)s->data_reg; /* little-endian host memory layout */
+    for (unsigned i = 0; i < nbytes; ++i) {
+        dst[i] = src[i];
+    }
+}
+
+/* perform transaction: sends cmd/addr/dummy/tx (MSB-first for cmd/addr), then reads rx */
 static void esp32s3_spi_perform_transaction(ESP32S3SpiState *s, ESP32S3SpiTransaction *t)
 {
-    if (s->xts_aes != NULL)
-    {
-        ESP32S3XtsAesClass *xts_aes_class = ESP32S3_XTS_AES_GET_CLASS(s->xts_aes);
-        bool man_enc_enabled = xts_aes_class->is_manual_enc_enabled(s->xts_aes);
+    /* assert CS active */
+    esp32s3_spi_cs_set(s, 0);
 
-        if (man_enc_enabled && xts_aes_class->is_ciphertext_spi_visible(s->xts_aes) && (t->cmd == CMD_PP)) {
-            xts_aes_class->read_ciphertext(s->xts_aes, t->data, &(t->tx_bytes), &(t->addr), &(t->addr_bytes));
+    /* --- send command (MSB-first) --- */
+    if (t->cmd_bytes > 0) {
+        uint8_t cmdbuf[8]; /* sufficient for typical small cmd lengths */
+        for (unsigned i = 0; i < t->cmd_bytes; ++i) {
+            unsigned shift = (t->cmd_bytes - 1 - i) * 8;
+            cmdbuf[i] = (uint8_t)((t->cmd >> shift) & 0xFF);
+        }
+        esp32s3_spi_txrx_buffer(s, cmdbuf, t->cmd_bytes, NULL, 0);
+    }
+
+    /* --- send address (MSB-first) --- */
+    if (t->addr_bytes > 0) {
+        uint8_t addrbuf[8];
+        for (unsigned i = 0; i < t->addr_bytes; ++i) {
+            unsigned shift = (t->addr_bytes - 1 - i) * 8;
+            addrbuf[i] = (uint8_t)((t->addr >> shift) & 0xFF);
+        }
+        esp32s3_spi_txrx_buffer(s, addrbuf, t->addr_bytes, NULL, 0);
+    }
+
+    /* --- dummy cycles (send zeros for dummy bytes) --- */
+    if (t->dummy_bytes > 0) {
+        /* allocate on stack if small, otherwise loop with a zero-byte */
+        uint8_t zero = 0;
+        for (unsigned i = 0; i < t->dummy_bytes; ++i) {
+            esp32s3_spi_txrx_buffer(s, &zero, 1, NULL, 0);
         }
     }
 
-    /* Check which CS line is active (low) */
-    esp32s3_spi_cs_set(s, 0);
-    esp32s3_spi_txrx_buffer(s, &t->cmd, t->cmd_bytes, NULL, 0);
-    esp32s3_spi_txrx_buffer(s, &t->addr, t->addr_bytes, NULL, 0);
-    esp32s3_spi_dummy_cycles(s, t->dummy_bytes);
-    esp32s3_spi_txrx_buffer(s, t->data, t->tx_bytes, t->data, t->rx_bytes);
+    /* --- MOSI data: copy from t->data (if provided) into a byte buffer and send --- */
+    if (t->tx_bytes > 0) {
+        uint8_t *txbuf = g_malloc0(t->tx_bytes);
+        if (t->data) {
+            /* expect t->data points into s->data_reg or a similar word-array; copy bytes */
+            copy_data_reg_bytes(s, txbuf, t->tx_bytes);
+        }
+        esp32s3_spi_txrx_buffer(s, txbuf, t->tx_bytes, NULL, 0);
+        g_free(txbuf);
+    }
+
+    /* --- MISO (rx): clock zeros and capture into t->data (if provided) --- */
+    if (t->rx_bytes > 0) {
+        /* we send zeros while reading; store received bytes into s->data_reg memory layout */
+        uint8_t *rx_target = NULL;
+        if (t->data) {
+            rx_target = (uint8_t *)t->data; /* typically s->data_reg */
+        } else {
+            /* if caller didn't supply data pointer but expects rx, use s->data_reg */
+            rx_target = (uint8_t *)s->data_reg;
+        }
+        /* send zeros and fill rx_target */
+        uint8_t *clock_buf = g_malloc0(t->rx_bytes);
+        esp32s3_spi_txrx_buffer(s, clock_buf, t->rx_bytes, rx_target, t->rx_bytes);
+        g_free(clock_buf);
+    }
+
+    /* deactivate CS */
     qemu_set_irq(s->cs_gpio[0], 1);
     esp32s3_spi_cs_set(s, 1);
 }
@@ -266,45 +352,84 @@ static inline void esp32s3_spi_get_dummy(ESP32S3SpiState *s, uint32_t* len)
     *len = (dummy_count + 7) / 8;
 }
 
+/* Put this helper near other debug helpers in esp32s3_spi.c */
+static void debug_print_bytes(const char *prefix, const uint8_t *buf, unsigned len)
+{
+    if (!len) {
+        info_report("%s: <zero length>", prefix);
+        return;
+    }
+    char tmp[256];
+    int off = 0;
+    off += snprintf(tmp + off, sizeof(tmp) - off, "%s:", prefix);
+    for (unsigned i = 0; i < len && off < (int)sizeof(tmp) - 4; ++i) {
+        off += snprintf(tmp + off, sizeof(tmp) - off, " %02x", buf[i]);
+    }
+    info_report("%s", tmp);
+}
+
+/* Drop-in replacement: explicit builder that special-cases SPI1 (flash)
+ * but for SPI2/SPI3 streams W0..W15 (data_reg) for MOSI. */
 static void esp32s3_spi_begin_transaction(ESP32S3SpiState *s)
 {
-    ESP32S3SpiTransaction t = {
-        .data = s->data_reg
-     };
+    // SPI1 = flash: keep old logic
+    if (s->spi_num == 1) {
+        ESP32S3SpiTransaction t = {0};
 
-    /* Get the number of bytes to read from the device */
-    if (s->mem_user & R_SPI_MEM_USER_USR_MISO_MASK) {
-        t.rx_bytes = FIELD_EX32(s->mem_miso_len, SPI_MEM_MISO_DLEN, USR_MISO_DBITLEN);
-        t.rx_bytes = (t.rx_bytes + 1) / 8;
+        t.data = s->data_reg;
+        if (s->mem_user & R_SPI_MEM_USER_USR_MOSI_MASK) {
+            t.tx_bytes = (FIELD_EX32(s->mem_mosi_len, SPI_MEM_MOSI_DLEN, USR_MOSI_DBITLEN) + 1) / 8;
+        }
+        if (s->mem_user & R_SPI_MEM_USER_USR_MISO_MASK) {
+            t.rx_bytes = (FIELD_EX32(s->mem_miso_len, SPI_MEM_MISO_DLEN, USR_MISO_DBITLEN) + 1) / 8;
+        }
+
+        t.cmd = FIELD_EX32(s->mem_user2, SPI_MEM_USER2, USR_COMMAND_VALUE);
+        t.cmd_bytes = (FIELD_EX32(s->mem_user2, SPI_MEM_USER2, USR_COMMAND_BITLEN) + 1) / 8;
+
+        if (s->mem_user & R_SPI_MEM_USER_USR_ADDR_MASK) {
+            esp32s3_spi_get_addr(s, &t.addr, &t.addr_bytes);
+            if (s->mem_user & R_SPI_MEM_USER_USR_DUMMY_MASK) {
+                esp32s3_spi_get_dummy(s, &t.dummy_bytes);
+            }
+        }
+
+        esp32s3_spi_perform_transaction(s, &t);
+        return;
     }
 
-    /* and the number of bytes to write to the device */
+    // SPI2/SPI3 = peripheral buses (ST7789, etc.)
+    const int max_bytes = ESP32S3_SPI_BUF_WORDS * 4;
+    uint8_t *data_bytes = (uint8_t *)s->data_reg;
+
+    int tx_bytes = 0;
     if (s->mem_user & R_SPI_MEM_USER_USR_MOSI_MASK) {
-        t.tx_bytes = FIELD_EX32(s->mem_mosi_len, SPI_MEM_MOSI_DLEN, USR_MOSI_DBITLEN);
-        t.tx_bytes = (t.tx_bytes + 1) / 8;
+        tx_bytes = (FIELD_EX32(s->mem_mosi_len, SPI_MEM_MOSI_DLEN, USR_MOSI_DBITLEN) + 1) / 8;
     }
-
-    /* Get the command and its length, in bytes
-     * In theory we should test mem_user's command bit. In practice, if we do, `esptool`
-     * cannot write flash successfully and detects an error */
-    t.cmd = FIELD_EX32(s->mem_user2, SPI_MEM_USER2, USR_COMMAND_VALUE);
-    t.cmd_bytes = FIELD_EX32(s->mem_user2, SPI_MEM_USER2, USR_COMMAND_BITLEN);
-    t.cmd_bytes = (t.cmd_bytes + 1) / 8;
-
-    /* Get the address and its length, in bytes */
-    if (s->mem_user & R_SPI_MEM_USER_USR_ADDR_MASK) {
-        esp32s3_spi_get_addr(s, &t.addr, &t.addr_bytes);
-        if (t.addr_bytes > 0 && t.addr_bytes <= 4) {
-            t.addr = t.addr >> (32 - t.addr_bytes * 8);
-        }
-
-        /* Only calculate and include dummy cycles when the USR_DUMMY bit is set! */
-        if (s->mem_user & R_SPI_MEM_USER_USR_DUMMY_MASK) {
-            esp32s3_spi_get_dummy(s, &t.dummy_bytes);
+    if (tx_bytes == 0) {
+        // fallback: scan for last non-zero word
+        for (int i = max_bytes - 1; i >= 0; --i) {
+            if (data_bytes[i] != 0) {
+                tx_bytes = i + 1;
+                break;
+            }
         }
     }
 
-    esp32s3_spi_perform_transaction(s, &t);
+    if (tx_bytes == 0) {
+        return; // nothing to send
+    }
+
+    // assert CS
+    esp32s3_spi_cs_set(s, 0);
+
+    // send all TX bytes in order (LSB-first per word)
+    for (int i = 0; i < tx_bytes; i++) {
+        ssi_transfer(s->spi, data_bytes[i]);
+    }
+
+    // deassert CS
+    esp32s3_spi_cs_set(s, 1);
 }
 
 
@@ -489,15 +614,11 @@ static void esp32s3_spi_write(void *opaque, hwaddr addr,
         } break;
         case 3: {
             //warn_report("[SPI3] detected");
-            info_report("[SPI3] Writing 0x%lx = %08lx", addr, value);
+            //info_report("[SPI3] Writing 0x%lx = %08lx", addr, value);
 
             switch (addr) {
                 case S3_SPI_CMD_REG:
-                    if(wvalue & R_SPI_MEM_CMD_USR_MASK) {
-                        esp32s3_spi_begin_transaction(s);
-                    } else {
-                        esp32s3_spi_special_command(s, wvalue);
-                    }
+                    esp32s3_spi_begin_transaction(s);
                     break;
                 case S3_SPI_MISC_REG:
                     s->misc = wvalue;
@@ -522,12 +643,20 @@ static void esp32s3_spi_write(void *opaque, hwaddr addr,
                     break;
                 case S3_SPI_SLAVE_REG:
                     s->slave_reg = wvalue;
+                    if (wvalue & S3_SPI_SLAVE_TRANS_START) {
+                        esp32s3_spi_begin_transaction(s);
+                    }
+                    break;
+                case S3_SPI_MS_DLEN_REG:
+                    s->mem_miso_len = wvalue;
+                    s->mem_mosi_len = wvalue;
                     break;
                 case S3_SPI_CLOCK_REG:
                     s->mem_clock = wvalue;
                     break;
                 case S3_SPI_W0_REG...S3_SPI_W15_REG:
-                    s->data_reg[(addr - A_SPI_MEM_W0) / sizeof(uint32_t)] = wvalue;
+                    s->data_reg[(addr - S3_SPI_W0_REG) / sizeof(uint32_t)] = wvalue;
+                    //ssi_transfer(s->spi, wvalue);
                     break;
                 default:
         //#if SPI1_WARNING
