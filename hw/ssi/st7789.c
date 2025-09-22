@@ -339,7 +339,7 @@ static uint32_t st7789_transfer(SSIPeripheral *dev, uint32_t value)
                         s->y = s->row_start;  // wraparound
                     }
                 }
-                dpy_gfx_update(s->con, 0, 0, s->width, s->height);
+                //dpy_gfx_update(s->con, 0, 0, s->width, s->height);
             }
         } else {
             // Unknown data phase
